@@ -2,10 +2,6 @@
 
 # -*- coding: utf-8 -*-
 
-#The program was written by Cal1pso (Daniil) and TR3M0R (Incognito)
-#All rights belong to us and no one else
-#Don’t ask anyone for questions, we’ll decide for ourselves
-
 from PyQt5 import QtCore, QtGui, QtWidgets
 import email
 import email.utils
