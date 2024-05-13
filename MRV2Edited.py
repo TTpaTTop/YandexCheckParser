@@ -38,8 +38,8 @@ class Work(UiFunc):
         super().__init__()
      # Подключение к почтовому серверу по протоколу IMAP
         imap_server = "imap.mail.ru" #IMAP-сервер
-        self.username = "yandex.taxi.lsfk@mail.ru" #Почта для парсинга
-        self.password = "x8jrNZAPa3va9SgY3u62" #Пароль от почты (Пароль приложения)
+        self.username = "" #Почта для парсинга
+        self.password = "" #Пароль от почты (Пароль приложения)
         self.imap = imaplib.IMAP4_SSL(imap_server)
         self.imap.login(self.username, self.password)
         self.imap.select("INBOX")
