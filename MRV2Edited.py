@@ -2,7 +2,10 @@
 
 # -*- coding: utf-8 -*-
 
+import sys
 from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import QApplication, QMainWindow, QListView, QVBoxLayout, QWidget
+from PyQt5.QtCore import pyqtSignal, QObject, Qt, QStringListModel
 import email
 import email.utils
 import base64
@@ -11,125 +14,21 @@ import re
 import os
 import logging
 import threading
+import configparser
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-
-class UiFunc:
-    def dateEditFormat(self, dateEditStartDate, dateEditEndDate):
-        logging.info('Преобразование dateEditStartFormat')
-        dateEditStartFormat = dateEditStartDate.date().toPyDate().strftime('%d-%b-%Y')
-        logging.info(f'Результат преобразования dateEditStartFormat: {dateEditStartFormat}')
-        logging.info('Преобразование dateEditEndFormat')
-        dateEditEndFormat = dateEditEndDate.date().toPyDate().strftime('%d-%b-%Y')
-        logging.info(f'Результат преображения dateEditEndFormat: {dateEditEndFormat}')
-        return[dateEditStartFormat, dateEditEndFormat]
+import time
 
 
-
-
-class Work(UiFunc):
+class Ui_MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-     # Подключение к почтовому серверу по протоколу IMAP
-        imap_server = "imap.mail.ru" #IMAP-сервер
-        self.username = "" #Почта для парсинга
-        self.password = "" #Пароль от почты (Пароль приложения)
-        self.imap = imaplib.IMAP4_SSL(imap_server)
-        self.imap.login(self.username, self.password)
-        self.imap.select("INBOX")
-        # Подключение к образу GoogleChrome
-        self.options = Options()
-        self.options.add_argument("--headless")
-        self.options.add_experimental_option(
-            "excludeSwitches", 
-            ["enable-automation"]
-        )
-        self.options.add_experimental_option('useAutomationExtension', False)
-        self.options.add_argument("--disable-blink-features=AutomationControlled")
 
-        self.driver = webdriver.Chrome(options=self.options)
-        self.driver.execute_cdp_cmd(
-            "Page.addScriptToEvaluateOnNewDocument", 
-            {
-                'source': 
-                    '''
-                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-                    '''
-            }
-        )
-
-    def searchMessageLink(self, dateEditFormat):
-        MessageArrayID = re.findall('([-+]?\d+)', str(self.imap.search(None, f'(SINCE "{dateEditFormat[0]}" BEFORE "{dateEditFormat[1]}")')))
-        logging.info(f'Результат преобразования дат в строку поиска промежутка писем: {MessageArrayID}')
-        MessageArrayLink = []
-        MessageArrayDate = []
-        MessageArrayError = []
-        logging.info('Запуск счетчика поиска ссылок в письме')
-        for i in MessageArrayID:
-            logging.info(f'Шаг #{i}')
-            _, msg = self.imap.fetch(str(i), '(RFC822)')
-            msg = email.message_from_bytes(msg[0][1])
-            MessageDate = email.utils.parsedate_to_datetime(msg["Date"])
-            for part in msg.walk():
-                if part.get_content_maintype() == 'text' and part.get_content_subtype() == 'html':
-                    content = base64.b64decode(part.get_payload()).decode()
-                    content = str(content)
-                    findStart = content.find("https://receipts-renderer" )
-                    findFinish = content.find("mode=mobile")
-                    if len(str(content[findStart:findFinish + 11])) == 100:
-                        MessageArrayLink.append(str(content[findStart:findFinish + 11]))
-                        MessageArrayDate.append(str(MessageDate))
-                    else:
-                        MessageArrayError.append(f'Ошибка в письме #{i}, дата и время письма: {str(MessageDate)}')
-        return[MessageArrayLink, MessageArrayDate, MessageArrayError]
-
-                
-
-    def getMessageCheck(self, MessageArrayLink, MessageArrayDate, OpenExplorerDir = False):
-        print(len(MessageArrayDate))
-        for i in range(len(MessageArrayLink)):
-            print(i)
-            link = MessageArrayLink[i]
-            datePath = MessageArrayDate[i].replace('-', '.')
-            datePath = datePath.replace(':', '_')
-            datePath = datePath.replace('+03-00', '')
-            self.driver.get(link)
-            s = lambda x: self.driver.execute_script(
-                'return document.body.parentNode.scroll' + x
-            )
-            self.driver.set_window_size(s('Width'), s('Height'))
-            print(f'{datePath}.png')
-            os.makedirs(r'ScreenShots', exist_ok=True)
-            self.driver.find_element(By.TAG_NAME, 'body').screenshot(f'ScreenShots/{datePath}.png')
-        if OpenExplorerDir == True:
-            return(os.system('start ScreenShots'))
-        else: 
-            return(print("Работа завершена!"))
-            
-
-    def logFile(self, WriteOn = False):
-        if WriteOn == True:
-            logging.basicConfig(level=logging.INFO, filename="LOG_MAIL_READER.log",filemode="a", format="%(asctime)s %(levelname)s %(message)s")
-            logging.info(str(datetime.now()))
-            logging.info('Логирование включено')
-        return()
+    text_signal = pyqtSignal(str)
 
 
-
-    def buttonPressed(self, dateEditStartDate, dateEditEndDate, checkBoxExplorer = False, checkBoxWriteLogFile = False):
-        logFile = self.logFile(checkBoxWriteLogFile)
-        logging.info('Считывание dateEditFormat')
-        dateEditFormat = self.dateEditFormat(dateEditStartDate, dateEditEndDate)
-        logging.info('Поиск цепочки писем по дате и запись ссылок в лист(массив) MessageArrayLink')
-        searchMessage = self.searchMessageLink(dateEditFormat)
-        getMessageCheck = self.getMessageCheck(searchMessage[0], searchMessage[1], checkBoxExplorer)
-
-
-class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         #Основное окно
         MainWindow.setObjectName("MainWindow")
@@ -183,10 +82,18 @@ class Ui_MainWindow(object):
         self.progressBarWork.setObjectName("progressBarWork")
 
         #Журнал работы программы
-        self.listViewWorkLogs = QtWidgets.QPlainTextEdit(self.groupBoxWorkSpace)
+        self.listViewWorkLogs = QtWidgets.QListView(self.groupBoxWorkSpace)
         self.listViewWorkLogs.setGeometry(QtCore.QRect(330, 19, 240, 100))
         self.listViewWorkLogs.setObjectName("listViewWorkLogs")
-        self.listViewWorkLogs.setReadOnly(True)
+        self.listViewWorkLogs.wordWrap()
+        # self.listViewWorkLogs.setReadOnly(True)
+
+        # Настройка модели для QlistView
+        self.model = QStringListModel()
+        self.listViewWorkLogs.setModel(self.model)
+
+        # Подключите сигнал с методом обновления
+        self.text_signal.connect(self.update_list)
 
         #(Условно) Рабочее пространство селекторов CheckBox
         self.groupBoxCheckBoxesSpace = QtWidgets.QGroupBox(self.groupBoxWorkSpace)
@@ -201,6 +108,7 @@ class Ui_MainWindow(object):
         self.checkBoxWriteLogFile.setText("")
         self.checkBoxWriteLogFile.setChecked(False)
         self.checkBoxWriteLogFile.setObjectName("checkBoxWriteLogFile")
+        self.checkBoxWriteLogFile.setEnabled(False)
 
         #Надпись checkBoxWriteLogFile
         self.labelWriteLogFile = QtWidgets.QLabel(self.groupBoxCheckBoxesSpace)
@@ -291,20 +199,35 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
-        
+
+    def update_list(self, text):
+        # Получите текущий список строк
+        current_data = self.model.stringList()
+        # Добавить новый текст в список
+        current_data.append(text)
+        # Обновите модель с новым списком
+        self.model.setStringList(current_data)
+        self.listViewWorkLogs.scrollToBottom()
+
+
     def onClick(self):
-        thread = threading.Thread(target=self.onClickWork)
+        thread = Work(self.text_signal)
+        thread = threading.Thread(target = self.onClickWork)
         thread.start()
 
+
     def onClickWork(self):
+        self.text_signal.emit(f'Поиск чеков...')
+        print("Кнопка нажалася")
         checkBoxOpenExplorer = self.checkBoxOpenExplorer.isChecked()
         checkBoxWriteLogFile = self.checkBoxWriteLogFile.isChecked()
-        test = Work()
+        test = Work(self.text_signal)
         gg = test.buttonPressed(self.dateEditStartDate, self.dateEditEndDate, checkBoxOpenExplorer, checkBoxWriteLogFile)
+
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Тест"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "MailReader"))
         self.labelTitleMain.setText(_translate("MainWindow", "MailReader"))
         self.labelVersion.setText(_translate("MainWindow", "Ver. 2.0 (Fix)"))
         self.labelTitleAuthors.setText(_translate("MainWindow", "by Cal1pso and TR3M0R"))
@@ -321,10 +244,140 @@ class Ui_MainWindow(object):
 
 
 
+
+
+class UiFunc:
+    def dateEditFormat(self, dateEditStartDate, dateEditEndDate):
+        logging.info('Преобразование dateEditStartFormat')
+        dateEditStartFormat = dateEditStartDate.date().toPyDate().strftime('%d-%b-%Y')
+        logging.info(f'Результат преобразования dateEditStartFormat: {dateEditStartFormat}')
+        logging.info('Преобразование dateEditEndFormat')
+        dateEditEndFormat = dateEditEndDate.date().toPyDate().strftime('%d-%b-%Y')
+        logging.info(f'Результат преображения dateEditEndFormat: {dateEditEndFormat}')
+        return[dateEditStartFormat, dateEditEndFormat]
+
+
+
+
+class Work(UiFunc):
+    def __init__(self, signal):
+        super().__init__()
+        self.text_signal = signal
+        print(self.text_signal)
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+     # Подключение к почтовому серверу по протоколу IMAP
+        imap_server = "imap.mail.ru" #IMAP-сервер
+        self.username = config['Authentication']['Mail'] #Почта для парсинга
+        self.password = config['Authentication']['Password'] #Пароль от почты (Пароль приложения)
+        self.imap = imaplib.IMAP4_SSL(imap_server)
+        self.imap.login(self.username, self.password)
+        self.imap.select("INBOX")
+        # Подключение к образу GoogleChrome
+        self.options = Options()
+        self.options.add_argument("--headless")
+        self.options.add_experimental_option(
+            "excludeSwitches", 
+            ["enable-automation"]
+        )
+        self.options.add_experimental_option('useAutomationExtension', False)
+        self.options.add_argument("--disable-blink-features=AutomationControlled")
+
+        self.driver = webdriver.Chrome(options=self.options)
+        self.driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument", 
+            {
+                'source': 
+                    '''
+                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+                    '''
+            }
+        )
+
+
+    def searchMessageLink(self, dateEditFormat):
+        print(self.text_signal)
+        MessageArrayID = re.findall('([-+]?\d+)', str(self.imap.search(None, f'(SINCE "{dateEditFormat[0]}" BEFORE "{dateEditFormat[1]}")')))
+        logging.info(f'Результат преобразования дат в строку поиска промежутка писем: {MessageArrayID}')
+        MessageArrayLink = []
+        MessageArrayDate = []
+        MessageArrayError = []
+        logging.info('Запуск счетчика поиска ссылок в письме')
+        for i in MessageArrayID:
+            logging.info(f'Шаг #{i}')
+            _, msg = self.imap.fetch(str(i), '(RFC822)')
+            msg = email.message_from_bytes(msg[0][1])
+            MessageDate = email.utils.parsedate_to_datetime(msg["Date"])
+            for part in msg.walk():
+                if part.get_content_maintype() == 'text' and part.get_content_subtype() == 'html':
+                    content = base64.b64decode(part.get_payload()).decode()
+                    content = str(content)
+                    findStart = content.find("https://receipts-renderer" )
+                    findFinish = content.find("mode=mobile")
+                    if len(str(content[findStart:findFinish + 11])) == 100:
+                        MessageArrayLink.append(str(content[findStart:findFinish + 11]))
+                        MessageArrayDate.append(str(MessageDate))
+                    else:
+                        MessageArrayError.append(f'Ошибка в письме #{i}, дата и время письма: {str(MessageDate)}')
+                        print(f'Ошибка в письме #{i}, дата и время письма: {str(MessageDate)}')
+                        self.text_signal.emit(f'Ошибка в письме #{i}')
+                        self.text_signal.emit(f'Дата и время письма: {str(MessageDate)}')
+        return[MessageArrayLink, MessageArrayDate, MessageArrayError, self.text_signal.emit(f'В заданном промужутке найдено:\nВсего {len(MessageArrayLink) + len(MessageArrayError)} чеков\n{len(MessageArrayError)} с ошибками')]
+
+                
+
+    def getMessageCheck(self, MessageArrayLink, MessageArrayDate, OpenExplorerDir = False):
+        time.sleep(0.8)
+        print(len(MessageArrayDate))
+        os.makedirs(r'ScreenShots', exist_ok=True)
+        for i in range(len(MessageArrayLink)):
+            print(i)
+            link = MessageArrayLink[i]
+            datePath = MessageArrayDate[i].replace('-', '.')
+            datePath = datePath.replace(':', '_')
+            datePath = datePath.replace('+03-00', '')
+            self.driver.get(link)
+            s = lambda x: self.driver.execute_script(
+                'return document.body.parentNode.scroll' + x
+            )
+            self.driver.set_window_size(s('Width'), s('Height'))
+            print(f'{datePath}.png')
+            self.driver.find_element(By.TAG_NAME, 'body').screenshot(f'ScreenShots/{datePath}.png')
+            self.text_signal.emit(f'Чек №{i + 1} сохранен')
+        if OpenExplorerDir == True:
+            return(os.system('start ScreenShots'),self.text_signal.emit(f'Сохранение завершено\nПапка открыта'))
+        else: 
+            return(print("Работа завершена!"), self.text_signal.emit(f'Сохранение завершено'))
+            
+
+    # def logFile(self, WriteOn = False):
+    #     if WriteOn == True:
+    #         logging.basicConfig(level=logging.INFO, filename="LOG_MAIL_READER.log",filemode="a", format="%(asctime)s %(levelname)s %(message)s")
+    #         logging.info(str(datetime.now()))
+    #         logging.info('Логирование включено')
+    #     return()
+
+
+
+    def buttonPressed(self, dateEditStartDate, dateEditEndDate, checkBoxExplorer = False, checkBoxWriteLogFile = False):
+        # logFile = self.logFile(checkBoxWriteLogFile)
+        dateEditFormat = self.dateEditFormat(dateEditStartDate, dateEditEndDate)
+        searchMessage = self.searchMessageLink(dateEditFormat)
+        getMessageCheck = self.getMessageCheck(searchMessage[0], searchMessage[1], checkBoxExplorer)
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-    MainWindow = QtWidgets.QMainWindow()
+    app = QApplication(sys.argv)
+    MainWindow = Ui_MainWindow()
     ui = Ui_MainWindow()
     ui.setupUi(MainWindow)
     MainWindow.show()
