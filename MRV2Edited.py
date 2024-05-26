@@ -2,25 +2,25 @@
 
 # -*- coding: utf-8 -*-
 
-import sys
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QListView, QVBoxLayout, QWidget
-from PyQt5.QtCore import pyqtSignal, QObject, Qt, QStringListModel
+from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtCore import pyqtSignal, QStringListModel, pyqtSlot
+from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+
+import time
 import email
 import email.utils
 import base64
 import imaplib
 import re
 import os
-import logging
 import threading
 import configparser
-from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
 import time
-
+import sys
 
 class Ui_MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -28,12 +28,12 @@ class Ui_MainWindow(QMainWindow):
 
     text_signal = pyqtSignal(str)
 
-
     def setupUi(self, MainWindow):
         #Основное окно
         MainWindow.setObjectName("MainWindow")
         MainWindow.setFixedSize(600, 230)
         MainWindow.setDocumentMode(False)
+
         #Центральный виджет
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
@@ -76,10 +76,11 @@ class Ui_MainWindow(QMainWindow):
 
         #Индикатор загрузки
         self.progressBarWork = QtWidgets.QProgressBar(self.groupBoxWorkSpace)
-        self.progressBarWork.setGeometry(QtCore.QRect(110, 129, 381, 25))
+        self.progressBarWork.setGeometry(QtCore.QRect(110, 135, 381, 20))
         self.progressBarWork.setProperty("value", 0)
         self.progressBarWork.setInvertedAppearance(False)
         self.progressBarWork.setObjectName("progressBarWork")
+        self.progressBarWork.setMaximum(0)
 
         #Журнал работы программы
         self.listViewWorkLogs = QtWidgets.QListView(self.groupBoxWorkSpace)
@@ -209,21 +210,25 @@ class Ui_MainWindow(QMainWindow):
         self.model.setStringList(current_data)
         self.listViewWorkLogs.scrollToBottom()
 
-
     def onClick(self):
+        self.text_signal.emit(f'Инициализация. Возможно краткое зависание')
         thread = Work(self.text_signal)
         thread = threading.Thread(target = self.onClickWork)
         thread.start()
 
-
     def onClickWork(self):
         self.text_signal.emit(f'Поиск чеков...')
-        print("Кнопка нажалася")
         checkBoxOpenExplorer = self.checkBoxOpenExplorer.isChecked()
         checkBoxWriteLogFile = self.checkBoxWriteLogFile.isChecked()
-        test = Work(self.text_signal)
-        gg = test.buttonPressed(self.dateEditStartDate, self.dateEditEndDate, checkBoxOpenExplorer, checkBoxWriteLogFile)
+        work = Work(self.text_signal)
+        work.progress_signal.connect(self.update_progress)
+        self.progressBarWork.setMaximum(100)
+        gg = work.buttonPressed(self.dateEditStartDate, self.dateEditEndDate, checkBoxOpenExplorer, checkBoxWriteLogFile)
 
+    @pyqtSlot(int)
+    def update_progress(self, progress):
+        self.progressBarWork.setValue(progress)
+        print(f'Текущее кол-во процентов: {self.progressBarWork.value()}')
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
@@ -243,27 +248,18 @@ class Ui_MainWindow(QMainWindow):
         self.pushButtonHelp.setText(_translate("MainWindow", "Справка"))
 
 
-
-
-
 class UiFunc:
     def dateEditFormat(self, dateEditStartDate, dateEditEndDate):
-        logging.info('Преобразование dateEditStartFormat')
         dateEditStartFormat = dateEditStartDate.date().toPyDate().strftime('%d-%b-%Y')
-        logging.info(f'Результат преобразования dateEditStartFormat: {dateEditStartFormat}')
-        logging.info('Преобразование dateEditEndFormat')
         dateEditEndFormat = dateEditEndDate.date().toPyDate().strftime('%d-%b-%Y')
-        logging.info(f'Результат преображения dateEditEndFormat: {dateEditEndFormat}')
         return[dateEditStartFormat, dateEditEndFormat]
 
 
-
-
-class Work(UiFunc):
+class Work(UiFunc, Ui_MainWindow):
+    progress_signal = pyqtSignal(int)
     def __init__(self, signal):
         super().__init__()
         self.text_signal = signal
-        print(self.text_signal)
         config = configparser.ConfigParser()
         config.read('config.ini')
      # Подключение к почтовому серверу по протоколу IMAP
@@ -300,13 +296,10 @@ class Work(UiFunc):
     def searchMessageLink(self, dateEditFormat):
         print(self.text_signal)
         MessageArrayID = re.findall('([-+]?\d+)', str(self.imap.search(None, f'(SINCE "{dateEditFormat[0]}" BEFORE "{dateEditFormat[1]}")')))
-        logging.info(f'Результат преобразования дат в строку поиска промежутка писем: {MessageArrayID}')
         MessageArrayLink = []
         MessageArrayDate = []
         MessageArrayError = []
-        logging.info('Запуск счетчика поиска ссылок в письме')
         for i in MessageArrayID:
-            logging.info(f'Шаг #{i}')
             _, msg = self.imap.fetch(str(i), '(RFC822)')
             msg = email.message_from_bytes(msg[0][1])
             MessageDate = email.utils.parsedate_to_datetime(msg["Date"])
@@ -324,7 +317,7 @@ class Work(UiFunc):
                         print(f'Ошибка в письме #{i}, дата и время письма: {str(MessageDate)}')
                         self.text_signal.emit(f'Ошибка в письме #{i}')
                         self.text_signal.emit(f'Дата и время письма: {str(MessageDate)}')
-        return[MessageArrayLink, MessageArrayDate, MessageArrayError, self.text_signal.emit(f'В заданном промужутке найдено:\nВсего {len(MessageArrayLink) + len(MessageArrayError)} чеков\n{len(MessageArrayError)} с ошибками')]
+        return[MessageArrayLink, MessageArrayDate, MessageArrayError, self.progress_signal.emit(100), self.text_signal.emit(f'В заданном промужутке найдено:\nВсего {len(MessageArrayLink) + len(MessageArrayError)} чеков\n{len(MessageArrayError)} с ошибками')]
 
                 
 
@@ -334,6 +327,7 @@ class Work(UiFunc):
         os.makedirs(r'ScreenShots', exist_ok=True)
         for i in range(len(MessageArrayLink)):
             print(i)
+            progress_step = len(MessageArrayLink)
             link = MessageArrayLink[i]
             datePath = MessageArrayDate[i].replace('-', '.')
             datePath = datePath.replace(':', '_')
@@ -346,33 +340,19 @@ class Work(UiFunc):
             print(f'{datePath}.png')
             self.driver.find_element(By.TAG_NAME, 'body').screenshot(f'ScreenShots/{datePath}.png')
             self.text_signal.emit(f'Чек №{i + 1} сохранен')
+            progress = int((i + 1) / progress_step * 100)
+            self.progress_signal.emit(progress)
         if OpenExplorerDir == True:
             return(os.system('start ScreenShots'),self.text_signal.emit(f'Сохранение завершено\nПапка открыта'))
         else: 
-            return(print("Работа завершена!"), self.text_signal.emit(f'Сохранение завершено'))
+            return(print("Работа завершена!"), self.text_signal.emit(f'Сохранение завершено'), self.progress_signal.emit(100))
             
-
-    # def logFile(self, WriteOn = False):
-    #     if WriteOn == True:
-    #         logging.basicConfig(level=logging.INFO, filename="LOG_MAIL_READER.log",filemode="a", format="%(asctime)s %(levelname)s %(message)s")
-    #         logging.info(str(datetime.now()))
-    #         logging.info('Логирование включено')
-    #     return()
-
 
 
     def buttonPressed(self, dateEditStartDate, dateEditEndDate, checkBoxExplorer = False, checkBoxWriteLogFile = False):
-        # logFile = self.logFile(checkBoxWriteLogFile)
         dateEditFormat = self.dateEditFormat(dateEditStartDate, dateEditEndDate)
         searchMessage = self.searchMessageLink(dateEditFormat)
         getMessageCheck = self.getMessageCheck(searchMessage[0], searchMessage[1], checkBoxExplorer)
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
